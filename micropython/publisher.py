@@ -4,7 +4,6 @@ import ubinascii
 import machine
 from umqtt.simple import MQTTClient
 import random
-import randomize
 import os
 import json
 
