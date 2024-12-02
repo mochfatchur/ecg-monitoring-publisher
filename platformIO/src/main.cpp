@@ -2,6 +2,9 @@
 #include <Crypto.h>
 #include <CryptoLW.h>
 #include <Ascon128.h>
+#include <ascon.h>
+
+#include <base64.h>  // Gunakan base64 bawaan ESP32
 
 // ECDH
 #include "public_key.h"
@@ -13,6 +16,7 @@
 // ECDH Main
 // Kunci Publik Bob (statis)
 const char bob_public_key_hex[] = CLIENT_PUBLIC_KEY;
+const uint8_t associatedData[] = "ascon"; 
 
 // Fungsi untuk mengonversi string HEX menjadi byte array
 void hexStringToBytes(const char *hexString, unsigned char *byteArray, size_t byteArrayLen) {
@@ -115,6 +119,7 @@ Ascon128 ascon;
 uint8_t plaintext[16];   // Data to encrypt (sensor data)
 uint8_t ciphertext[16];  // Encrypted data
 uint8_t decrypted[16];   // Decrypted data
+uint8_t tag[16];         // tag
 
 // ============= test data =================
 
@@ -166,10 +171,71 @@ void encryptAndDecryptSensorData() {
 }
 
 
+void encryptAndDecryptWithAD() {
+    int sensorValue = random(0, 1024); 
+    Serial.print("Generated Sensor Value: ");
+    Serial.println(sensorValue);
+
+    // Konversi nilai sensor ke plaintext
+    memset(plaintext, 0, sizeof(plaintext));
+    plaintext[0] = (sensorValue >> 8) & 0xFF;  
+    plaintext[1] = sensorValue & 0xFF;
+
+    // Enkripsi
+    ascon.clear();
+    ascon.setKey(key, sizeof(key));
+    ascon.setIV(iv, sizeof(iv));
+    ascon.addAuthData(associatedData, sizeof(associatedData));
+    ascon.encrypt(ciphertext, plaintext, sizeof(plaintext));
+    ascon.computeTag(tag, sizeof(tag));
+
+    Serial.print("Encrypted Data (size: ");
+    Serial.print(sizeof(ciphertext));
+    Serial.print(" bytes): ");
+    for (size_t i = 0; i < sizeof(ciphertext); i++) {
+        Serial.printf("%02X ", ciphertext[i]);
+    }
+    Serial.println();
+    
+    Serial.print("Tag (size: ");
+    Serial.print(sizeof(tag));
+    Serial.print(" bytes): ");
+    for (size_t i = 0; i < sizeof(tag); i++) {
+        Serial.printf("%02X ", tag[i]);
+    }
+    Serial.println();
+
+    // Base64 encoding hasil dekripsi
+    String base64Encoded = base64::encode(ciphertext, sizeof(ciphertext));
+    Serial.print("Encrypted Data (Base64): ");
+    Serial.println(base64Encoded);
+
+    // Dekripsi
+    ascon.clear();
+    ascon.setKey(key, sizeof(key));
+    ascon.setIV(iv, sizeof(iv));
+    ascon.addAuthData(associatedData, sizeof(associatedData));
+    ascon.decrypt(decrypted, ciphertext, sizeof(ciphertext));
+    
+    if (ascon.checkTag(tag, sizeof(tag))) {
+        Serial.println("Tag Valid: Data is authenticated.");
+
+        // Base64 encoding hasil dekripsi
+        String base64Encoded = base64::encode(decrypted, sizeof(decrypted));
+        Serial.print("Decrypted Data (Base64): ");
+        Serial.println(base64Encoded);
+    } else {
+        Serial.println("Tag Invalid: Data authentication failed!");
+    }
+    Serial.println();
+}
+
+
+
 void loop() {
     // put your main code here, to run repeatedly:
-    Serial.println("Starting ECDH Test...");
-    runECDHTest();
+    // Serial.println("Starting ECDH Test...");
+    // runECDHTest();
     // Buffer untuk kunci privat dan publik
     uint8_t private1[21];
     uint8_t private2[21];
@@ -180,7 +246,8 @@ void loop() {
     uint8_t secret2[20];
     
     // ascon test
-    encryptAndDecryptSensorData();
+    // encryptAndDecryptSensorData();
+    encryptAndDecryptWithAD();
 
     // Delay sebelum loop berikutnya
     delay(5000);
