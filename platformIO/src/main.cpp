@@ -5,6 +5,11 @@
 
 #include <base64.h>  // Gunakan base64 bawaan ESP32
 
+// HKDF
+#include <SHA256.h>
+#include <HKDF.h>
+
+
 // ECDH
 #include "public_key.h"
 #include "mbedtls/ecdh.h"
@@ -180,20 +185,51 @@ void doEncrypt() {
     Serial.println();
 }
 
+
+void hkdfTest() {
+     // Contoh shared_key (hasil ECDH, 32 byte)
+    const uint8_t shared_key[32] = {
+        0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
+        0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00
+    };
+
+    // Contoh salt dan info
+    const uint8_t salt[] = {0x01, 0x02, 0x03, 0x04}; // Salt untuk HKDF
+    const uint8_t info[] = {0x05, 0x06, 0x07, 0x08}; // Info opsional
+
+    // Buffer untuk kunci hasil derivasi
+    uint8_t derived_key[16]; // Output key 16 byte
+
+    // Menggunakan HKDF dengan SHA-256
+    hkdf<SHA256>(
+        derived_key,          // Output buffer
+        sizeof(derived_key),  // Panjang output yang diinginkan (16 byte)
+        shared_key,           // Input Key Material (32 byte)
+        sizeof(shared_key),   // Panjang shared_key (32 byte)
+        salt,                 // Salt
+        sizeof(salt),         // Panjang salt
+        info,                 // Info opsional
+        sizeof(info)          // Panjang info
+    );
+
+    // Cetak kunci hasil derivasi
+    Serial.println("Derived Key (16 bytes):");
+    for (size_t i = 0; i < sizeof(derived_key); i++) {
+        Serial.printf("%02X ", derived_key[i]);
+    }
+    Serial.println();
+}
+
 void loop() {
     // put your main code here, to run repeatedly:
     Serial.println("==== ECDH Test ====");
     runECDHTest();
-    // Buffer untuk kunci privat dan publik
-    uint8_t private1[21];
-    uint8_t private2[21];
-    uint8_t public1[40];
-    uint8_t public2[40];
-    // Buffer untuk shared secret
-    uint8_t secret1[20];
-    uint8_t secret2[20];
     
-    // ascon test
+    Serial.println("==== HKDF TEST ====");
+    hkdfTest();
+
     Serial.println("==== ASCON AEAD TEST ====");
     doEncrypt();
 
