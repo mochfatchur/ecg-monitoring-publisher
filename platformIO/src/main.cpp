@@ -3,7 +3,12 @@
 #include <CryptoLW.h>
 #include <Ascon128.h>
 
-#include <base64.h>  // Gunakan base64 bawaan ESP32
+#include <base64.h>
+
+#include <WiFi.h>
+#include "app_config.h"
+
+#include <PubSubClient.h>
 
 // HKDF
 #include <SHA256.h>
@@ -128,10 +133,63 @@ uint8_t tag[16];         // tag
 // ============= test data =================
 
 
+
+// Konfigurasi WiFi
+// Nama_SSID
+const char* ssid = WIFI_SSID;
+// Password_SSID
+const char* password = WIFI_PASSWORD;
+
+// Konfigurasi MQTT
+const char* mqtt_server = MQTT_SERVER;
+const char* mqtt_topic = MQTT_PUBLISH_TOPIC;
+
+// Konfigurasi Pin ADC
+#define ECG_PIN 36 // Pin ADC tempat sensor ECG terhubung
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Menghubungkan ke ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi terhubung");
+}
+
+void reconnect() {
+  // Loop hingga terhubung ke broker MQTT
+  while (!client.connected()) {
+    Serial.print("Menghubungkan ke MQTT...");
+    if (client.connect("ESP32Client")) {
+      Serial.println("terhubung");
+    } else {
+      Serial.print("gagal, rc=");
+      Serial.print(client.state());
+      Serial.println(" mencoba lagi dalam 5 detik");
+      delay(5000);
+    }
+  }
+}
+
+
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  // Initialize Ascon cipher
+    // put your setup code here, to run once:
+    Serial.begin(115200);
+    // Initialize wifi & mqtt 
+    setup_wifi();
+    client.setServer(mqtt_server, MQTT_PORT);
+    // Initialize Ascon cipher
     ascon.clear();
     ascon.setKey(key, sizeof(key));
     ascon.setIV(iv, sizeof(iv));
@@ -224,6 +282,23 @@ void hkdfTest() {
 
 void loop() {
     // put your main code here, to run repeatedly:
+    Serial.println("==== Wifi & MQTT Test ====");
+    if (!client.connected()) {
+        reconnect();
+    }
+    client.loop();
+
+    // Baca data dari sensor ECG
+    // int ecgValue = analogRead(ECG_PIN);
+    int ecgValue = 271;
+    Serial.print("ECG Value: ");
+    Serial.println(ecgValue);
+
+    // Konversi data ke string dan kirim ke broker MQTT
+    char message[10];
+    sprintf(message, "%d", ecgValue);
+    client.publish(mqtt_topic, message);
+
     Serial.println("==== ECDH Test ====");
     runECDHTest();
     
