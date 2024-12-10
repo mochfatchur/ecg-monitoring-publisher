@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <Crypto.h>
 #include <CryptoLW.h>
 #include <Ascon128.h>
@@ -184,9 +185,8 @@ void connect_mqtt() {
   }
 }
 
-void doEncrypt() {
+void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag) {
     // Pesan dan data autentikasi
-    const char *plainText = "271";
     const char *authData = "ascon";
 
     // Inisialisasi Ascon128
@@ -197,39 +197,36 @@ void doEncrypt() {
         Serial.println("Gagal menyetel kunci");
         return;
     }
-    
+
     if (!cipher.setIV(iv, sizeof(iv))) {
         Serial.println("Gagal menyetel IV");
         return;
     }
-    
+
     // Tambahkan associated data
     cipher.addAuthData(authData, strlen(authData));
 
-    // Buffer untuk hasil enkripsi
-    uint8_t encryptedOutput[16];
-    uint8_t tag[16];
-
     // Lakukan enkripsi pesan
-    cipher.encrypt(encryptedOutput, (const uint8_t *)plainText, strlen(plainText));
+    cipher.encrypt(ciphertext, (const uint8_t *)plainText, strlen(plainText));
 
     // Hitung tag autentikasi
-    cipher.computeTag(tag, sizeof(tag));
+    cipher.computeTag(tag, 16);
 
     // Cetak hasil enkripsi
     Serial.println("Pesan terenkripsi:");
     for (size_t i = 0; i < strlen(plainText); i++) {
-        Serial.printf("%02X ", encryptedOutput[i]);
+        Serial.printf("%02X ", ciphertext[i]);
     }
     Serial.println();
 
     // Cetak tag autentikasi
     Serial.println("Tag autentikasi:");
-    for (size_t i = 0; i < sizeof(tag); i++) {
+    for (size_t i = 0; i < 16; i++) {
         Serial.printf("%02X ", tag[i]);
     }
     Serial.println();
 }
+
 
 
 void hkdfTest() {
@@ -297,15 +294,15 @@ void loop() {
 
     // Baca data dari sensor ECG
     // int ecgValue = analogRead(ECG_PIN);
-    int ecgValue = 271;
     // int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
-    Serial.print("ECG Value: ");
-    Serial.println((String)ecgValue);
 
-    // Konversi data ke string dan kirim ke broker MQTT
-    char message[10];
-    sprintf(message, "%d", ecgValue);
-    client.publish(mqtt_topic, message);
+    int ecgValue = 271;
+    // Konversi integer ke string
+    char ecgValueStr[4]; // Pastikan buffer cukup besar
+    sprintf(ecgValueStr, "%d", ecgValue);
+    // test 
+    Serial.print("ECG Value: ");
+    Serial.println(ecgValue);
 
     Serial.println("==== ECDH Test ====");
     runECDHTest();
@@ -314,9 +311,38 @@ void loop() {
     hkdfTest();
 
     Serial.println("==== ASCON AEAD TEST ====");
-    doEncrypt();
+     // Buffer untuk output ciphertext dan tag
+    uint8_t ciphertext[16];
+    uint8_t tag[16];
+
+    // Panggil fungsi enkripsi
+    doEncrypt(ecgValueStr, ciphertext, tag);
 
     Serial.println();
+
+    // Konversi ciphertext dan tag ke Base64
+    String ciphertextBase64 = base64::encode(ciphertext, 16);
+    String tagBase64 = base64::encode(tag, 16);
+
+    // Buat payload JSON menggunakan ArduinoJson
+    StaticJsonDocument<200> jsonDoc;
+    jsonDoc["msg"] = ciphertextBase64;
+    jsonDoc["tag"] = tagBase64;
+
+    String jsonPayload;
+    serializeJson(jsonDoc, jsonPayload);
+
+    // Cetak payload JSON
+    Serial.println("Payload JSON:");
+    Serial.println(jsonPayload);
+
+    // Publish ke MQTT
+    if (client.connected()) {
+        client.publish("ecg/data", jsonPayload.c_str());
+        Serial.println("Data terenkripsi dipublikasikan ke MQTT.");
+    } else {
+        Serial.println("Gagal mempublikasikan ke MQTT: tidak terhubung.");
+    }
 
     // Delay sebelum loop berikutnya
     delay(5000);
