@@ -151,7 +151,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 
-void setup_wifi() {
+void connect_wifi() {
   delay(10);
   Serial.println();
   Serial.print("Menghubungkan ke ");
@@ -165,9 +165,11 @@ void setup_wifi() {
 
   Serial.println("");
   Serial.println("WiFi terhubung");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
-void reconnect() {
+void connect_mqtt() {
   // Loop hingga terhubung ke broker MQTT
   while (!client.connected()) {
     Serial.print("Menghubungkan ke MQTT...");
@@ -181,20 +183,6 @@ void reconnect() {
     }
   }
 }
-
-
-void setup() {
-    // put your setup code here, to run once:
-    Serial.begin(115200);
-    // Initialize wifi & mqtt 
-    setup_wifi();
-    client.setServer(mqtt_server, MQTT_PORT);
-    // Initialize Ascon cipher
-    ascon.clear();
-    ascon.setKey(key, sizeof(key));
-    ascon.setIV(iv, sizeof(iv));
-}
-
 
 void doEncrypt() {
     // Pesan dan data autentikasi
@@ -280,19 +268,39 @@ void hkdfTest() {
     Serial.println();
 }
 
+
+
+void setup() {
+    // put your setup code here, to run once:
+    Serial.begin(115200);
+    // Initialize wifi & mqtt 
+    connect_wifi();
+    client.setServer(mqtt_server, MQTT_PORT);
+    // Initialize Ascon cipher
+    ascon.clear();
+    ascon.setKey(key, sizeof(key));
+    ascon.setIV(iv, sizeof(iv));
+}
+
 void loop() {
     // put your main code here, to run repeatedly:
     Serial.println("==== Wifi & MQTT Test ====");
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi disconnected. Reconnecting...");
+        connect_wifi();
+    }
+    
     if (!client.connected()) {
-        reconnect();
+        connect_mqtt();
     }
     client.loop();
 
     // Baca data dari sensor ECG
     // int ecgValue = analogRead(ECG_PIN);
     int ecgValue = 271;
+    // int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
     Serial.print("ECG Value: ");
-    Serial.println(ecgValue);
+    Serial.println((String)ecgValue);
 
     // Konversi data ke string dan kirim ke broker MQTT
     char message[10];
