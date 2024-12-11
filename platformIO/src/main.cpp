@@ -294,9 +294,9 @@ void loop() {
 
     // Baca data dari sensor ECG
     // int ecgValue = analogRead(ECG_PIN);
-    // int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
+    int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
 
-    int ecgValue = 271;
+    // int ecgValue = 271;
     // Konversi integer ke string
     char ecgValueStr[4]; // Pastikan buffer cukup besar
     sprintf(ecgValueStr, "%d", ecgValue);
@@ -312,7 +312,7 @@ void loop() {
 
     Serial.println("==== ASCON AEAD TEST ====");
      // Buffer untuk output ciphertext dan tag
-    uint8_t ciphertext[16];
+    uint8_t ciphertext[strlen(ecgValueStr)];
     uint8_t tag[16];
 
     // Panggil fungsi enkripsi
@@ -320,14 +320,26 @@ void loop() {
 
     Serial.println();
 
-    // Konversi ciphertext dan tag ke Base64
-    String ciphertextBase64 = base64::encode(ciphertext, 16);
-    String tagBase64 = base64::encode(tag, 16);
+    // Gabungkan ciphertext dan tag menjadi satu array
+    size_t ciphertextLen = sizeof(ciphertext);
+    size_t totalLength = ciphertextLen + sizeof(tag);
+    uint8_t *ciphertextAndTag = (uint8_t *)malloc(totalLength);
+    if (ciphertextAndTag == nullptr) {
+        Serial.println("Gagal mengalokasikan memori untuk ciphertextAndTag");
+        return;
+    }
+    memcpy(ciphertextAndTag, ciphertext, ciphertextLen);
+    memcpy(ciphertextAndTag + ciphertextLen, tag, sizeof(tag));
+
+    // Konversi hasil gabungan ke Base64
+    String ciphertextAndTagBase64 = base64::encode(ciphertextAndTag, totalLength);
+
+    // Bebaskan memori yang digunakan untuk buffer gabungan
+    free(ciphertextAndTag);
 
     // Buat payload JSON menggunakan ArduinoJson
     StaticJsonDocument<200> jsonDoc;
-    jsonDoc["msg"] = ciphertextBase64;
-    jsonDoc["tag"] = tagBase64;
+    jsonDoc["msg"] = ciphertextAndTagBase64;
 
     String jsonPayload;
     serializeJson(jsonDoc, jsonPayload);
