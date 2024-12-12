@@ -36,17 +36,12 @@ void hexStringToBytes(const char *hexString, unsigned char *byteArray, size_t by
 }
 
 // Fungsi untuk menjalankan ECDH
-void runECDHTest() {
+void ecdhGenerateSharedKey(unsigned char *public_key, size_t *public_key_len,
+                 unsigned char *shared_secret, size_t *shared_secret_len) {
     // Inisialisasi struktur mbedTLS
     mbedtls_ecdh_context ecdh;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
-
-    // Buffer untuk kunci
-    unsigned char public_key[65];
-    size_t public_key_len;
-    unsigned char shared_secret[32];
-    size_t shared_secret_len;
 
     const char *pers = "ecdh_example";
 
@@ -76,14 +71,14 @@ void runECDHTest() {
 
     // Menulis public key Alice ke buffer
     if (mbedtls_ecp_point_write_binary(&ecdh.grp, &ecdh.Q,
-                                       MBEDTLS_ECP_PF_UNCOMPRESSED, &public_key_len,
-                                       public_key, sizeof(public_key)) != 0) {
+                                       MBEDTLS_ECP_PF_UNCOMPRESSED, public_key_len,
+                                       public_key, 65) != 0) {
         Serial.println("Failed to write public key");
         goto cleanup;
     }
 
     Serial.println("Public Key Alice Generated:");
-    for (size_t i = 0; i < public_key_len; i++) {
+    for (size_t i = 0; i < *public_key_len; i++) {
         Serial.printf("%02X", public_key[i]);
     }
     Serial.println();
@@ -100,18 +95,18 @@ void runECDHTest() {
     }
 
     // Hitung shared secret
-    if (mbedtls_ecdh_calc_secret(&ecdh, &shared_secret_len,
-                                 shared_secret, sizeof(shared_secret),
+    if (mbedtls_ecdh_calc_secret(&ecdh, shared_secret_len,
+                                 shared_secret, 32,
                                  mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
         Serial.println("Failed to compute shared secret");
         goto cleanup;
     }
 
-    Serial.println("Shared Secret:");
-    for (size_t i = 0; i < shared_secret_len; i++) {
-        Serial.printf("%02X", shared_secret[i]);
-    }
-    Serial.println();
+    // Serial.println("Shared Secret:");
+    // for (size_t i = 0; i < *shared_secret_len; i++) {
+    //     Serial.printf("%02X", shared_secret[i]);
+    // }
+    // Serial.println();
 
 cleanup:
     // Bersihkan resource
@@ -305,8 +300,17 @@ void loop() {
     Serial.println(ecgValue);
 
     Serial.println("==== ECDH Test ====");
-    runECDHTest();
-    
+    unsigned char public_key[65];
+    size_t public_key_len;
+    unsigned char shared_secret[32];
+    size_t shared_secret_len;
+
+    ecdhGenerateSharedKey(public_key, &public_key_len, shared_secret, &shared_secret_len);
+    Serial.println("Shared Secret:");
+    for (size_t i = 0; i < shared_secret_len; i++) {
+        Serial.printf("%02X", shared_secret[i]);
+    }
+    Serial.println();
     Serial.println("==== HKDF TEST ====");
     hkdfTest();
 
