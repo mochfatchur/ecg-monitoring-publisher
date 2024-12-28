@@ -180,7 +180,7 @@ void connect_mqtt() {
   }
 }
 
-void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag) {
+void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv,  uint8_t *key) {
     // Pesan dan data autentikasi
     const char *authData = "ascon";
 
@@ -188,12 +188,12 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag) {
     Ascon128 cipher;
 
     // Set kunci dan IV
-    if (!cipher.setKey(key, sizeof(key))) {
+    if (!cipher.setKey(key, 16)) {
         Serial.println("Gagal menyetel kunci");
         return;
     }
 
-    if (!cipher.setIV(iv, sizeof(iv))) {
+    if (!cipher.setIV(iv, 16)) {
         Serial.println("Gagal menyetel IV");
         return;
     }
@@ -224,41 +224,33 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag) {
 
 
 
-void hkdfTest() {
-     // Contoh shared_key (hasil ECDH, 32 byte)
-    const uint8_t shared_key[32] = {
-        0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
-        0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00
-    };
-
-    // Contoh salt dan info
-    const uint8_t salt[] = {0x01, 0x02, 0x03, 0x04}; // Salt untuk HKDF
-    const uint8_t info[] = {0x05, 0x06, 0x07, 0x08}; // Info opsional
-
-    // Buffer untuk kunci hasil derivasi
-    uint8_t derived_key[16]; // Output key 16 byte
+void doHkdf(uint8_t shared_key[32], uint8_t* outputKey, size_t outputKeyLength, uint8_t* salt, size_t saltLength, uint8_t* info, size_t infoLength) {
+    // Validasi input
+    if (shared_key == nullptr || outputKey == nullptr || salt == nullptr || info == nullptr) {
+        Serial.println("Error: Parameter null");
+        return;
+    }
 
     // Menggunakan HKDF dengan SHA-256
     hkdf<SHA256>(
-        derived_key,          // Output buffer
-        sizeof(derived_key),  // Panjang output yang diinginkan (16 byte)
-        shared_key,           // Input Key Material (32 byte)
-        sizeof(shared_key),   // Panjang shared_key (32 byte)
-        salt,                 // Salt
-        sizeof(salt),         // Panjang salt
-        info,                 // Info opsional
-        sizeof(info)          // Panjang info
+        outputKey,           // Output buffer (pointer)
+        outputKeyLength,     // Panjang output yang diinginkan
+        shared_key,          // Input Key Material (32 byte)
+        32,                  // Panjang shared_key (selalu 32 byte)
+        salt,                // Salt
+        saltLength,          // Panjang salt
+        info,                // Info opsional
+        infoLength           // Panjang info
     );
 
     // Cetak kunci hasil derivasi
-    Serial.println("Derived Key (16 bytes):");
-    for (size_t i = 0; i < sizeof(derived_key); i++) {
-        Serial.printf("%02X ", derived_key[i]);
+    Serial.println("Derived Key:");
+    for (size_t i = 0; i < outputKeyLength; i++) {
+        Serial.printf("%02X ", outputKey[i]);
     }
     Serial.println();
 }
+
 
 
 
@@ -268,10 +260,6 @@ void setup() {
     // Initialize wifi & mqtt 
     connect_wifi();
     client.setServer(mqtt_server, MQTT_PORT);
-    // Initialize Ascon cipher
-    ascon.clear();
-    ascon.setKey(key, sizeof(key));
-    ascon.setIV(iv, sizeof(iv));
 }
 
 void loop() {
@@ -312,15 +300,27 @@ void loop() {
     }
     Serial.println();
     Serial.println("==== HKDF TEST ====");
-    hkdfTest();
+    // Contoh shared_key (hasil ECDH, 32 byte)
+    // uint8_t sharedKey[32] = {
+    //     0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
+    //     0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90,
+    //     0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    //     0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00
+    // };
 
+    // Buffer untuk kunci hasil derivasi
+    uint8_t derived_key[16]; // Output key 16 byte
+
+    // Panggil fungsi dengan parameter
+    doHkdf(shared_secret, derived_key, sizeof(derived_key), salt, sizeof(salt), info, sizeof(info));
+    
     Serial.println("==== ASCON AEAD TEST ====");
      // Buffer untuk output ciphertext dan tag
     uint8_t ciphertext[strlen(ecgValueStr)];
     uint8_t tag[16];
 
     // Panggil fungsi enkripsi
-    doEncrypt(ecgValueStr, ciphertext, tag);
+    doEncrypt(ecgValueStr, ciphertext, tag, iv, derived_key);
 
     Serial.println();
 
@@ -337,6 +337,7 @@ void loop() {
 
     // Konversi hasil gabungan ke Base64
     String ciphertextAndTagBase64 = base64::encode(ciphertextAndTag, totalLength);
+    String publicKeyBase64 = base64::encode(public_key, public_key_len);
 
     // Bebaskan memori yang digunakan untuk buffer gabungan
     free(ciphertextAndTag);
@@ -344,6 +345,7 @@ void loop() {
     // Buat payload JSON menggunakan ArduinoJson
     StaticJsonDocument<200> jsonDoc;
     jsonDoc["msg"] = ciphertextAndTagBase64;
+    jsonDoc["pb"] = publicKeyBase64;
 
     String jsonPayload;
     serializeJson(jsonDoc, jsonPayload);
