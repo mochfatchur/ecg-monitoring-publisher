@@ -35,6 +35,13 @@ void hexStringToBytes(const char *hexString, unsigned char *byteArray, size_t by
     }
 }
 
+// Fungsi untuk menghasilkan uint8_t array untuk IV dan salt
+void generateSecureRandom(uint8_t* output, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        output[i] = esp_random() & 0xFF; // Ambil byte acak
+    }
+}
+
 // Fungsi untuk menjalankan ECDH
 void ecdhGenerateSharedKey(unsigned char *public_key, size_t *public_key_len,
                  unsigned char *shared_secret, size_t *shared_secret_len) {
@@ -287,6 +294,28 @@ void loop() {
     Serial.print("ECG Value: ");
     Serial.println(ecgValue);
 
+    Serial.println("==== Test Generate IV & Salt ====");
+    uint8_t iv[16];
+
+    generateSecureRandom(iv, 16);
+
+    Serial.println("Generated IV:");
+    for (size_t i = 0; i < 16; i++) {
+        Serial.printf("%02X ", iv[i]);
+    }
+    Serial.println();
+
+    const size_t saltLen = 16;
+    uint8_t salt_test[saltLen];
+
+    generateSecureRandom(salt_test, saltLen);
+
+    Serial.println("Generated Salt:");
+    for (size_t i = 0; i < saltLen; i++) {
+        Serial.printf("%02X ", salt_test[i]);
+    }
+    Serial.println();
+
     Serial.println("==== ECDH Test ====");
     unsigned char public_key[65];
     size_t public_key_len;
@@ -300,19 +329,12 @@ void loop() {
     }
     Serial.println();
     Serial.println("==== HKDF TEST ====");
-    // Contoh shared_key (hasil ECDH, 32 byte)
-    // uint8_t sharedKey[32] = {
-    //     0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
-    //     0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90,
-    //     0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-    //     0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00
-    // };
 
     // Buffer untuk kunci hasil derivasi
     uint8_t derived_key[16]; // Output key 16 byte
 
     // Panggil fungsi dengan parameter
-    doHkdf(shared_secret, derived_key, sizeof(derived_key), salt, sizeof(salt), info, sizeof(info));
+    doHkdf(shared_secret, derived_key, sizeof(derived_key), salt_test, sizeof(salt_test), info, sizeof(info));
     
     Serial.println("==== ASCON AEAD TEST ====");
      // Buffer untuk output ciphertext dan tag
@@ -336,6 +358,8 @@ void loop() {
     memcpy(ciphertextAndTag + ciphertextLen, tag, sizeof(tag));
 
     // Konversi hasil gabungan ke Base64
+    String ivBase64 = base64::encode(iv, 16);
+    String saltBase64 = base64::encode(salt_test, saltLen);
     String ciphertextAndTagBase64 = base64::encode(ciphertextAndTag, totalLength);
     String publicKeyBase64 = base64::encode(public_key, public_key_len);
 
@@ -344,6 +368,8 @@ void loop() {
 
     // Buat payload JSON menggunakan ArduinoJson
     StaticJsonDocument<200> jsonDoc;
+    jsonDoc["iv"] = ivBase64;
+    jsonDoc["salt"] = saltBase64;
     jsonDoc["msg"] = ciphertextAndTagBase64;
     jsonDoc["pb"] = publicKeyBase64;
 
