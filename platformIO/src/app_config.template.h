@@ -8,6 +8,8 @@
 #define MQTT_PORT 1883
 #define MQTT_PUBLISH_TOPIC "YOUR_PUBLISH_TOPIC"
 
+#define SERVER_BASE_URL "http://your-ip-server:3000"
+#define API_URL(endpoint) (String(SERVER_BASE_URL) + endpoint)
 
 
 #endif
