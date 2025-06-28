@@ -24,6 +24,23 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 
+// timestamp
+#include <time.h>
+
+
+// setup NTP untuk timestamp
+void setupTime() {
+  configTime(7 * 3600, 0, "pool.ntp.org");  // UTC+7, 0 DST
+  Serial.print("Menunggu sinkronisasi waktu");
+  time_t now = time(nullptr);
+  while (now < 100000) {  // Waktu awal biasanya 0
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println("\nWaktu tersinkronisasi!");
+}
+
 // utils
 void printHex(const uint8_t* data, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -229,9 +246,7 @@ void connect_mqtt() {
   }
 }
 
-void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv,  uint8_t *key) {
-    // Pesan dan data autentikasi
-    const char *authData = "ascon";
+void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv,  uint8_t *key, const char* ad) {
 
     // Inisialisasi Ascon128
     Ascon128 cipher;
@@ -248,7 +263,7 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv, 
     }
 
     // Tambahkan associated data
-    cipher.addAuthData(authData, strlen(authData));
+    cipher.addAuthData(ad, strlen(ad));
 
     // Lakukan enkripsi pesan
     cipher.encrypt(ciphertext, (const uint8_t *)plainText, strlen(plainText));
@@ -269,6 +284,10 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv, 
         Serial.printf("%02X ", tag[i]);
     }
     Serial.println();
+
+    Serial.print("AD: ");
+    Serial.print("AD (string): ");
+    Serial.println(ad);
 }
 
 void setup() {
@@ -278,6 +297,8 @@ void setup() {
     connect_wifi();
     client.setServer(MQTT_SERVER, MQTT_PORT);
     doKeyExchange();
+    // konfigurasi waktu NTP
+    setupTime();
 }
 
 void loop() {
@@ -296,6 +317,11 @@ void loop() {
     // Baca data dari sensor ECG
     // int ecgValue = analogRead(ECG_PIN);
     int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
+
+    // timestamp
+    time_t now = time(nullptr);
+    char ad[16];
+    snprintf(ad, sizeof(ad), "%ld", now);  // ubah timestamp jadi string
 
     // int ecgValue = 271;
     // Konversi integer ke string
@@ -325,7 +351,7 @@ void loop() {
     printHex(session_key, sizeof(session_key));
 
     // Panggil fungsi enkripsi
-    doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key);
+    doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
 
     Serial.println();
 
@@ -350,7 +376,7 @@ void loop() {
     // Buat payload JSON menggunakan ArduinoJson
     StaticJsonDocument<200> jsonDoc;
     jsonDoc["iv"] = ivBase64;
-    jsonDoc["ad"] = "ascon";
+    jsonDoc["ad"] = ad;
     jsonDoc["msg"] = ciphertextAndTagBase64;
 
     String jsonPayload;
@@ -369,5 +395,5 @@ void loop() {
     }
 
     // Delay sebelum loop berikutnya
-    delay(5000);
+    delay(500);
 }
