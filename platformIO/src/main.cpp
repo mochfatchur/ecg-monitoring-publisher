@@ -443,10 +443,10 @@ void loop() {
         Serial.print("Rata-rata waktu enkripsi: ");
         Serial.print(rataRata);
         Serial.println(" µs");
-        Serial.print("Standar deviasi: ");
-        Serial.print(stddev);
-        Serial.println(" µs");
-        Serial.println("==============================================");
+        // Serial.print("Standar deviasi: ");
+        // Serial.print(stddev);
+        // Serial.println(" µs");
+        // Serial.println("==============================================");
 
         sudahSelesai = true;
     }
