@@ -30,6 +30,7 @@
 
 // setup NTP untuk timestamp
 void setupTime() {
+  Serial.println("==== Sinkronisasi Waktu NTP ====");
   configTime(7 * 3600, 0, "time.windows.com");  // UTC+7, 0 DST
   Serial.print("Menunggu sinkronisasi waktu");
   time_t now = time(nullptr);
@@ -85,20 +86,19 @@ void postPubKeyExchange(JsonDocument& jsonDoc, uint8_t* server_pub, unsigned int
   
     HTTPClient http;
     String url = API_URL("/key-exchange");
-    Serial.println("Posting to: " + url);
+    Serial.println("POST Request ke: " + url);
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
   
     String requestBody;
     serializeJson(jsonDoc, requestBody);
   
-    Serial.println("Sending JSON:");
+    Serial.println("payload request yang dikirimkan:");
     Serial.println(requestBody);
   
     int httpCode = http.POST(requestBody);
   
     if (httpCode > 0) {
-      Serial.printf("HTTP Response code: %d\n", httpCode);
       String response = http.getString();
       Serial.println("Response:");
       Serial.println(response);
@@ -134,17 +134,11 @@ void doHkdf(uint8_t shared_key[32], uint8_t* outputKey, size_t outputKeyLength, 
         info,                // Info opsional
         infoLength           // Panjang info
     );
-
-    // Cetak kunci hasil derivasi
-    Serial.println("Derived Key:");
-    for (size_t i = 0; i < outputKeyLength; i++) {
-        Serial.printf("%02X ", outputKey[i]);
-    }
-    Serial.println();
 }
 
 
 void doKeyExchange() {
+    Serial.println("=== Pembangkitan Kunci Publik dan Privat (IoT) ===");
     // init
     mbedtls_ecdh_context ctx;
     mbedtls_ctr_drbg_context ctr_drbg;
@@ -166,14 +160,22 @@ void doKeyExchange() {
     mbedtls_ecdh_gen_public(&ctx.grp, &ctx.d, &ctx.Q, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ecp_point_write_binary(&ctx.grp, &ctx.Q, MBEDTLS_ECP_PF_UNCOMPRESSED, &olen, client_pub, sizeof(client_pub));
 
+    Serial.print("Kunci Publik IoT(hex): ");
+    printHex(client_pub, olen);
+    Serial.println("=== Kunci Publik milik IoT Dihasilkan ===\n");
 
-    // Generate Salt
+
+    // Pembangkitan Salt
+    Serial.println("=== Pembangkitan Salt ===");
     const size_t saltLen = 16;
     uint8_t salt[saltLen];
     generateSecureRandom(salt, saltLen);
-    String saltBase64 = base64::encode(salt, saltLen);
+    Serial.print("Salt (hex): ");
+    printHex(salt, saltLen);
+    Serial.println("=== Salt Dihasilkan ===");
 
     // Encode to base64
+    String saltBase64 = base64::encode(salt, saltLen);
     String pub_b64 = base64::encode(client_pub, olen);
     // Buat payload JSON menggunakan ArduinoJson
     StaticJsonDocument<256> payload;
@@ -182,8 +184,12 @@ void doKeyExchange() {
     payload["salt"] = saltBase64;
 
     // Send to server
+    Serial.println("\n=== Memulai Pertukaran Kunci Publik IoT-Server ===");
     unsigned int len = 0;
     postPubKeyExchange(payload, server_pub, &len);
+    Serial.print("Kunci Publik server (hex): ");
+    printHex(server_pub, len);
+    Serial.println("=== Kunci Publik Server Diterima ===\n");
     
     // Load server public key
     mbedtls_ecp_point_read_binary(&ctx.grp, &ctx.Qp, server_pub, len);
@@ -192,19 +198,19 @@ void doKeyExchange() {
     mbedtls_ecdh_compute_shared(&ctx.grp, &ctx.z, &ctx.Qp, &ctx.d, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_mpi_write_binary(&ctx.z, shared_secret, sizeof(shared_secret));
 
-    // Cetak hasil shared secret
-    Serial.println("Shared secret:");
-    for (size_t i = 0; i < sizeof(shared_secret); i++) { Serial.printf("%02X", shared_secret[i]); }
-    Serial.println();
+    // Hitung kunci bersama (ECDH)
+    Serial.println("=== Memulai Perhitungan Kunci Bersama ===");
+    Serial.print("Kunci Bersama (hex): ");
+    printHex(shared_secret, sizeof(shared_secret));
+    Serial.println("=== Kunci Bersama Dihasilkan ===");
 
-    // Derive session key via HKDF
+    // Penurunan Kunci Enkripsi (HKDF)
+    Serial.println("\n=== Memulai Penurunan Kunci Enkripsi (HKDF) ===");
     doHkdf(shared_secret, session_key, sizeof(session_key), salt, sizeof(salt), info, sizeof(info));
-    
     // Print the derived session key
-    Serial.print("Derived session key (hex): ");
+    Serial.print("Kunci Enkripsi (hex): ");
     printHex(session_key, sizeof(session_key));
-
-    Serial.println("[ESP32] Session key derived successfully");
+    Serial.println("=== Kunci Sesi Dihasilkan ===");
 
     // Clean up
     mbedtls_ecdh_free(&ctx);
@@ -222,7 +228,7 @@ PubSubClient client(espClient);
 
 void connect_wifi() {
   delay(10);
-  Serial.println();
+  Serial.println("==== Setup WiFi ====");
   Serial.print("Menghubungkan ke ");
   Serial.println(WIFI_SSID);
 
@@ -232,14 +238,15 @@ void connect_wifi() {
     Serial.print(".");
   }
 
-  Serial.println("");
-  Serial.println("WiFi terhubung");
+  Serial.println("WiFi terhubung!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+  Serial.println("==== Setup WiFi Selesai ====");
 }
 
 void connect_mqtt() {
   // Loop hingga terhubung ke broker MQTT
+  Serial.println("\n==== Setup MQTT ====");
   while (!client.connected()) {
     Serial.print("Menghubungkan ke MQTT...");
     if (client.connect("ESP32Client")) {
@@ -251,6 +258,7 @@ void connect_mqtt() {
       delay(5000);
     }
   }
+  Serial.println("==== Setup MQTT Selesai ====\n");
 }
 
 void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv,  uint8_t *key, const char* ad) {
@@ -279,21 +287,14 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv, 
     cipher.computeTag(tag, 16);
 
     // Cetak hasil enkripsi
-    Serial.println("Pesan terenkripsi:");
-    for (size_t i = 0; i < strlen(plainText); i++) {
-        Serial.printf("%02X ", ciphertext[i]);
-    }
-    Serial.println();
+    Serial.print("ciphertext EKG (hex): ");
+    printHex(ciphertext, strlen(plainText));
 
     // Cetak tag autentikasi
-    Serial.println("Tag autentikasi:");
-    for (size_t i = 0; i < 16; i++) {
-        Serial.printf("%02X ", tag[i]);
-    }
-    Serial.println();
+    Serial.print("Tag autentikasi:");
+    printHex(tag, 16);
 
-    Serial.print("AD: ");
-    Serial.print("AD (string): ");
+    Serial.print("AD (timestamp): ");
     Serial.println(ad);
 }
 
@@ -301,16 +302,23 @@ void setup() {
     // put your setup code here, to run once:
     Serial.begin(115200);
     // Initialize wifi & mqtt 
+    Serial.println();
     connect_wifi();
+    Serial.println();
+
+    Serial.println("==== Inisiasi MQTT ====");
     client.setServer(MQTT_SERVER, MQTT_PORT);
+    Serial.println("==== Setup MQTT berhasil ====");
+
+    Serial.println();
     doKeyExchange();
+    Serial.println();
+
     // konfigurasi waktu NTP
     setupTime();
 }
 
 void loop() {
-    // put your main code here, to run repeatedly:
-    Serial.println("==== Wifi & MQTT Test ====");
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi disconnected. Reconnecting...");
         connect_wifi();
@@ -325,48 +333,27 @@ void loop() {
     // int ecgValue = analogRead(ECG_PIN);
     int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
 
-    // timestamp
-    // time_t now = time(nullptr);
-    // char ad[16];
-    // snprintf(ad, sizeof(ad), "%ld", now);  // ubah timestamp jadi string
-
     // timestamp sekarang dalam ms
     uint64_t nowMs = getEpochMillis();
     char ad[16];
     snprintf(ad, sizeof(ad), "%llu", nowMs);
-    Serial.printf("ESP Time (ms): %llu\n", nowMs);
+    // Serial.printf("ESP Time (ms): %llu\n", nowMs);
 
-    // int ecgValue = 271;
     // Konversi integer ke string
     char ecgValueStr[4]; // Pastikan buffer cukup besar
     sprintf(ecgValueStr, "%d", ecgValue);
-    // test 
-    Serial.print("ECG Value: ");
+    Serial.print("Nilai EKG: ");
     Serial.println(ecgValue);
 
-    Serial.println("==== Test Generate IV & Salt ====");
     uint8_t iv[16];
-
     generateSecureRandom(iv, 16);
 
-    Serial.println("Generated IV:");
-    for (size_t i = 0; i < 16; i++) {
-        Serial.printf("%02X ", iv[i]);
-    }
-
-    Serial.println("==== ASCON AEAD TEST ====");
      // Buffer untuk output ciphertext dan tag
     uint8_t ciphertext[strlen(ecgValueStr)];
     uint8_t tag[16];
 
-    // Print the derived session key
-    Serial.print("Derived session key (hex): ");
-    printHex(session_key, sizeof(session_key));
-
     // Panggil fungsi enkripsi
     doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
-
-    Serial.println();
 
     // Gabungkan ciphertext dan tag menjadi satu array
     size_t ciphertextLen = sizeof(ciphertext);
@@ -396,13 +383,13 @@ void loop() {
     serializeJson(jsonDoc, jsonPayload);
 
     // Cetak payload JSON
-    Serial.println("Payload JSON:");
+    Serial.println("Payload yang akan di-publish:");
     Serial.println(jsonPayload);
 
     // Publish ke MQTT
     if (client.connected()) {
         client.publish(MQTT_PUBLISH_TOPIC, jsonPayload.c_str());
-        Serial.println("Data terenkripsi dipublikasikan ke MQTT.");
+        Serial.println("Data terenkripsi dipublikasikan ke MQTT.\n");
     } else {
         Serial.println("Gagal mempublikasikan ke MQTT: tidak terhubung.");
     }
