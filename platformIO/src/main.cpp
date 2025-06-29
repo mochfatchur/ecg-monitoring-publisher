@@ -49,6 +49,20 @@ uint64_t getEpochMillis() {
   return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
+// TEST
+const int TOTAL_ITERASI = 100;
+unsigned long encryptTimes[TOTAL_ITERASI];
+int iterasiSekarang = 0;
+bool sudahSelesai = false;
+
+// Fungsi pengukur waktu
+unsigned long measureEncryptionTime(std::function<void()> encryptFn) {
+    unsigned long start = micros();
+    encryptFn();
+    return micros() - start;
+}
+
+
 // utils
 void printHex(const uint8_t* data, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -353,7 +367,21 @@ void loop() {
     uint8_t tag[16];
 
     // Panggil fungsi enkripsi
-    doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
+    unsigned long waktuEncrypt = measureEncryptionTime([&]() {
+        doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
+    });
+
+    // Simpan waktu
+    if (iterasiSekarang < TOTAL_ITERASI) {
+        encryptTimes[iterasiSekarang] = waktuEncrypt;
+        iterasiSekarang++;
+
+        // Tambahkan info iterasi
+        Serial.print("Iterasi ke-");
+        Serial.print(iterasiSekarang);
+        Serial.print("/");
+        Serial.println(TOTAL_ITERASI);
+    }
 
     // Gabungkan ciphertext dan tag menjadi satu array
     size_t ciphertextLen = sizeof(ciphertext);
@@ -392,6 +420,35 @@ void loop() {
         Serial.println("Data terenkripsi dipublikasikan ke MQTT.\n");
     } else {
         Serial.println("Gagal mempublikasikan ke MQTT: tidak terhubung.");
+    }
+
+    // Setelah 100 iterasi, tampilkan hasil
+    if (iterasiSekarang == TOTAL_ITERASI && !sudahSelesai) {
+        unsigned long total = 0;
+        for (int i = 0; i < TOTAL_ITERASI; i++) {
+            total += encryptTimes[i];
+        }
+        float rataRata = total / (float)TOTAL_ITERASI;
+
+        float variance = 0;
+        for (int i = 0; i < TOTAL_ITERASI; i++) {
+            float diff = encryptTimes[i] - rataRata;
+            variance += diff * diff;
+        }
+        float stddev = sqrt(variance / TOTAL_ITERASI);
+
+        Serial.println("========== Hasil Benchmark Enkripsi ==========");
+        Serial.print("Jumlah iterasi: ");
+        Serial.println(TOTAL_ITERASI);
+        Serial.print("Rata-rata waktu enkripsi: ");
+        Serial.print(rataRata);
+        Serial.println(" µs");
+        Serial.print("Standar deviasi: ");
+        Serial.print(stddev);
+        Serial.println(" µs");
+        Serial.println("==============================================");
+
+        sudahSelesai = true;
     }
 
     // Delay sebelum loop berikutnya
