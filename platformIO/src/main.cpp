@@ -30,7 +30,7 @@
 
 // setup NTP untuk timestamp
 void setupTime() {
-  configTime(7 * 3600, 0, "pool.ntp.org");  // UTC+7, 0 DST
+  configTime(7 * 3600, 0, "time.windows.com");  // UTC+7, 0 DST
   Serial.print("Menunggu sinkronisasi waktu");
   time_t now = time(nullptr);
   while (now < 100000) {  // Waktu awal biasanya 0
@@ -39,6 +39,13 @@ void setupTime() {
     now = time(nullptr);
   }
   Serial.println("\nWaktu tersinkronisasi!");
+}
+
+// Ambil waktu epoch dalam milidetik
+uint64_t getEpochMillis() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
 // utils
@@ -319,9 +326,15 @@ void loop() {
     int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
 
     // timestamp
-    time_t now = time(nullptr);
+    // time_t now = time(nullptr);
+    // char ad[16];
+    // snprintf(ad, sizeof(ad), "%ld", now);  // ubah timestamp jadi string
+
+    // timestamp sekarang dalam ms
+    uint64_t nowMs = getEpochMillis();
     char ad[16];
-    snprintf(ad, sizeof(ad), "%ld", now);  // ubah timestamp jadi string
+    snprintf(ad, sizeof(ad), "%llu", nowMs);
+    Serial.printf("ESP Time (ms): %llu\n", nowMs);
 
     // int ecgValue = 271;
     // Konversi integer ke string
