@@ -17,6 +17,10 @@
 #include <SHA256.h>
 #include <HKDF.h>
 
+// AES
+#include <mbedtls/aes.h>
+#include "mbedtls/gcm.h"
+#include "mbedtls/cipher.h"
 
 // ECDH
 #include "public_key.h"
@@ -275,7 +279,9 @@ void connect_mqtt() {
   Serial.println("==== Setup MQTT Selesai ====\n");
 }
 
-void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv,  uint8_t *key, const char* ad) {
+void doEncrypt(char *plainText, uint8_t *ciphertext,
+               uint8_t *tag, uint8_t *iv,
+               uint8_t *key, const char* ad) {
 
     // Inisialisasi Ascon128
     Ascon128 cipher;
@@ -310,6 +316,29 @@ void doEncrypt(char *plainText, uint8_t *ciphertext, uint8_t *tag, uint8_t *iv, 
 
     Serial.print("AD (timestamp): ");
     Serial.println(ad);
+}
+
+void doEncryptAESGCM(char *plaintext, uint8_t *ciphertext,
+                     uint8_t *tag, uint8_t *iv, uint8_t *key,
+                     uint8_t *associatedData, size_t adLen) {
+    // Inisialisasi konteks GCM
+    mbedtls_gcm_context gcm;
+    mbedtls_gcm_init(&gcm);
+    mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, 128);
+    mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT,
+                              strlen(plaintext), iv, 16,
+                              associatedData, adLen,
+                              (const uint8_t *) plaintext, ciphertext,
+                              16, tag);
+    // Cetak hasil enkripsi
+    Serial.print("ciphertext EKG (hex): ");
+    printHex(ciphertext, strlen(plaintext));
+
+    // Cetak tag autentikasi
+    Serial.print("Tag autentikasi (hex): ");
+    printHex(tag, 16);
+
+    mbedtls_gcm_free(&gcm);
 }
 
 void setup() {
@@ -367,8 +396,12 @@ void loop() {
     uint8_t tag[16];
 
     // Panggil fungsi enkripsi
+    // unsigned long waktuEncrypt = measureEncryptionTime([&]() {
+    //     doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
+    // });
+
     unsigned long waktuEncrypt = measureEncryptionTime([&]() {
-        doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
+        doEncryptAESGCM(ecgValueStr, ciphertext, tag, iv, session_key, (uint8_t *) ad, strlen(ad));
     });
 
     // Simpan waktu
