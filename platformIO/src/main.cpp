@@ -53,17 +53,41 @@ uint64_t getEpochMillis() {
   return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-// TEST
+// TESTING ITERASI
 const int TOTAL_ITERASI = 100;
-unsigned long encryptTimes[TOTAL_ITERASI];
 int iterasiSekarang = 0;
 bool sudahSelesai = false;
+unsigned long encryptTimes[TOTAL_ITERASI];
+uint32_t heapUsages[TOTAL_ITERASI];
 
-// Fungsi pengukur waktu
+// TEST Waktu Enkripsi
 unsigned long measureEncryptionTime(std::function<void()> encryptFn) {
     unsigned long start = micros();
     encryptFn();
     return micros() - start;
+}
+
+// TEST Penggunaan Memori
+unsigned long measureEncryptWithHeap(std::function<void()> encryptFn, uint32_t* heapUsedOut) {
+    // Ambil heap sebelum enkripsi
+    
+    uint32_t heapBefore = ESP.getFreeHeap();
+    // Catat waktu mulai
+    unsigned long start = micros();
+
+    // fungsi enkripsi yang akan diukur
+    encryptFn(); 
+
+    // Hitung waktu yang dibutuhkan untuk melakukan enkripsi data
+    unsigned long elapsed = micros() - start;
+    // Ambil heap setelah enkripsi 
+    uint32_t heapAfter = ESP.getFreeHeap(); 
+
+    // Hitung penggunaan heap
+    *heapUsedOut = (heapBefore > heapAfter) ? (heapBefore - heapAfter) : 0; 
+
+    // Mengembalikan waktu yang dibutuhkan untuk enkripsi dalam mikrodetik
+    return elapsed; 
 }
 
 
@@ -396,17 +420,20 @@ void loop() {
     uint8_t tag[16];
 
     // Panggil fungsi enkripsi
-    // unsigned long waktuEncrypt = measureEncryptionTime([&]() {
+    uint32_t heapUsed = 0;
+    // unsigned long waktuEncrypt = measureEncryptWithHeap([&]() {
     //     doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
-    // });
+    // }, &heapUsed);
 
-    unsigned long waktuEncrypt = measureEncryptionTime([&]() {
+    unsigned long waktuEncrypt = measureEncryptWithHeap([&]() {
         doEncryptAESGCM(ecgValueStr, ciphertext, tag, iv, session_key, (uint8_t *) ad, strlen(ad));
-    });
+    }, &heapUsed);
 
     // Simpan waktu
     if (iterasiSekarang < TOTAL_ITERASI) {
         encryptTimes[iterasiSekarang] = waktuEncrypt;
+        heapUsages[iterasiSekarang] = heapUsed;
+
         iterasiSekarang++;
 
         // Tambahkan info iterasi
@@ -414,6 +441,11 @@ void loop() {
         Serial.print(iterasiSekarang);
         Serial.print("/");
         Serial.println(TOTAL_ITERASI);
+        // Serial.print(": Waktu = ");
+        // Serial.print(waktuEncrypt);
+        // Serial.print(" µs | Heap = ");
+        // Serial.print(heapUsed);
+        // Serial.println(" byte");
     }
 
     // Gabungkan ciphertext dan tag menjadi satu array
@@ -457,25 +489,34 @@ void loop() {
 
     // Setelah 100 iterasi, tampilkan hasil
     if (iterasiSekarang == TOTAL_ITERASI && !sudahSelesai) {
-        unsigned long total = 0;
-        for (int i = 0; i < TOTAL_ITERASI; i++) {
-            total += encryptTimes[i];
-        }
-        float rataRata = total / (float)TOTAL_ITERASI;
+        unsigned long totalTime = 0;
+        uint32_t totalHeap = 0;
 
-        float variance = 0;
         for (int i = 0; i < TOTAL_ITERASI; i++) {
-            float diff = encryptTimes[i] - rataRata;
-            variance += diff * diff;
+            totalTime += encryptTimes[i];
+            totalHeap += heapUsages[i];
         }
-        float stddev = sqrt(variance / TOTAL_ITERASI);
 
-        Serial.println("========== Hasil Benchmark Enkripsi ==========");
+        float rataTime = totalTime / (float)TOTAL_ITERASI;
+        float rataHeap = totalHeap / (float)TOTAL_ITERASI;
+
+        // float variance = 0;
+        // for (int i = 0; i < TOTAL_ITERASI; i++) {
+        //     float diff = encryptTimes[i] - rataRata;
+        //     variance += diff * diff;
+        // }
+        // float stddev = sqrt(variance / TOTAL_ITERASI);
+
+        Serial.println("\n========== Hasil Benchmark ==========");
         Serial.print("Jumlah iterasi: ");
         Serial.println(TOTAL_ITERASI);
         Serial.print("Rata-rata waktu enkripsi: ");
-        Serial.print(rataRata);
+        Serial.print(rataTime);
         Serial.println(" µs");
+        Serial.print("Rata-rata penggunaan heap: ");
+        Serial.print(rataHeap);
+        Serial.println(" byte");
+        Serial.println("=====================================");
         // Serial.print("Standar deviasi: ");
         // Serial.print(stddev);
         // Serial.println(" µs");
