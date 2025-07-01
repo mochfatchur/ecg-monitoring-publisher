@@ -267,6 +267,8 @@ void doKeyExchange() {
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// Subscribe ke topik MQTT
+const char* mqttCmdTopic = MQTT_SUBSCRIBE_TOPIC;
 
 void connect_wifi() {
   delay(10);
@@ -293,6 +295,9 @@ void connect_mqtt() {
     Serial.print("Menghubungkan ke MQTT...");
     if (client.connect("ESP32Client")) {
       Serial.println("terhubung");
+      client.subscribe(mqttCmdTopic);
+      Serial.print("Subscribed to: ");
+      Serial.println(mqttCmdTopic);
     } else {
       Serial.print("gagal, rc=");
       Serial.print(client.state());
@@ -301,6 +306,40 @@ void connect_mqtt() {
     }
   }
   Serial.println("==== Setup MQTT Selesai ====\n");
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("[MQTT] Message arrived on topic: ");
+  Serial.println(topic);
+
+  // Copy payload to string
+  String messageStr;
+  for (unsigned int i = 0; i < length; i++) {
+    messageStr += (char)payload[i];
+  }
+
+  Serial.print("Payload: ");
+  Serial.println(messageStr);
+
+  // Parse JSON
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, messageStr);
+
+  if (error) {
+    Serial.print("JSON parse failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Check type
+  const char* type = doc["type"];
+  if (type && String(type) == "keyExchangeRequest") {
+    const char* reason = doc["reason"];
+    Serial.print("Key exchange requested due to: ");
+    Serial.println(reason ? reason : "unknown");
+
+    doKeyExchange();
+  }
 }
 
 void doEncrypt(char *plainText, uint8_t *ciphertext,
@@ -375,6 +414,8 @@ void setup() {
 
     Serial.println("==== Inisiasi MQTT ====");
     client.setServer(MQTT_SERVER, MQTT_PORT);
+    client.setCallback(callback);
+    connect_mqtt();
     Serial.println("==== Setup MQTT berhasil ====");
 
     Serial.println();
