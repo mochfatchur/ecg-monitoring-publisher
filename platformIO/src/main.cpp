@@ -120,7 +120,7 @@ void generateSecureRandom(uint8_t* output, size_t length) {
 // For session
 uint8_t session_key[16];
 
-void postPubKeyExchange(JsonDocument& jsonDoc, uint8_t* server_pub, unsigned int* len) {
+void postPertukaranKunciPublik(JsonDocument& jsonDoc, uint8_t* server_pub, unsigned int* len) {
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi not connected.");
       return;
@@ -228,7 +228,7 @@ void doKeyExchange() {
     // Send to server
     Serial.println("\n=== Memulai Pertukaran Kunci Publik IoT-Server ===");
     unsigned int len = 0;
-    postPubKeyExchange(payload, server_pub, &len);
+    postPertukaranKunciPublik(payload, server_pub, &len);
     Serial.print("Kunci Publik server (hex): ");
     printHex(server_pub, len);
     Serial.println("=== Kunci Publik Server Diterima ===\n");
@@ -261,9 +261,7 @@ void doKeyExchange() {
 
 }
 
-// Konfigurasi Pin ADC
-#define ECG_PIN 36 // Pin ADC tempat sensor ECG terhubung
-
+// Konfigurasi WiFi dan MQTT
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -407,6 +405,12 @@ void doEncryptAESGCM(char *plaintext, uint8_t *ciphertext,
 void setup() {
     // put your setup code here, to run once:
     Serial.begin(115200);
+
+    // Konfigurasi pin ADC
+    pinMode(ECG_PIN, INPUT); // ECG signal
+    pinMode(LO_PLUS, INPUT); // Lead-off detection LO+
+    pinMode(LO_MINUS, INPUT); // Lead-off detection LO-
+
     // Initialize wifi & mqtt 
     Serial.println();
     connect_wifi();
@@ -437,9 +441,19 @@ void loop() {
     }
     client.loop();
 
+    // Check if leads are properly connected
+    if((digitalRead(LO_PLUS) == 1) || (digitalRead(LO_MINUS) == 1)) {
+      Serial.println("Leads off or not properly connected");
+      delay(500);
+      return; // Skip reading if leads are not connected
+    }
+
     // Baca data dari sensor ECG
-    // int ecgValue = analogRead(ECG_PIN);
-    int ecgValue = random(200, 900); // Generate random ECG value between 200 and 900
+    int ecgValue = analogRead(ECG_PIN);
+    Serial.print("ECG Value: ");
+    Serial.println(ecgValue);
+    // Generate random ECG value between 200 and 900
+    // int ecgValue = random(200, 900);
 
     // timestamp sekarang dalam ms
     uint64_t nowMs = getEpochMillis();
@@ -448,7 +462,7 @@ void loop() {
     // Serial.printf("ESP Time (ms): %llu\n", nowMs);
 
     // Konversi integer ke string
-    char ecgValueStr[4]; // Pastikan buffer cukup besar
+    char ecgValueStr[6]; // Pastikan buffer cukup besar
     sprintf(ecgValueStr, "%d", ecgValue);
     Serial.print("Nilai EKG: ");
     Serial.println(ecgValue);
@@ -567,5 +581,5 @@ void loop() {
     }
 
     // Delay sebelum loop berikutnya
-    delay(500);
+    delay(4);
 }
