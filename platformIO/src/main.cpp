@@ -527,13 +527,13 @@ void loop() {
 
     // Panggil fungsi enkripsi
     uint32_t heapUsed = 0;
-    // unsigned long waktuEncrypt = measureEncryptWithHeap([&]() {
-    //     doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
-    // }, &heapUsed);
-
     unsigned long waktuEncrypt = measureEncryptWithHeap([&]() {
-        doEncryptAESGCM(ecgValueStr, ciphertext, tag, iv, session_key, (uint8_t *) ad, strlen(ad));
+        doEncrypt(ecgValueStr, ciphertext, tag, iv, session_key, ad);
     }, &heapUsed);
+
+    // unsigned long waktuEncrypt = measureEncryptWithHeap([&]() {
+    //     doEncryptAESGCM(ecgValueStr, ciphertext, tag, iv, session_key, (uint8_t *) ad, strlen(ad));
+    // }, &heapUsed);
 
     // Simpan waktu
     if (iterasiSekarang < TOTAL_ITERASI) {
