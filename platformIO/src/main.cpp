@@ -3,6 +3,7 @@
 #include <Crypto.h>
 #include <CryptoLW.h>
 #include <Ascon128.h>
+#include "esp_adc_cal.h" // Diperlukan untuk kalibrasi ADC ESP32
 
 #include <base64.h>
 #include <Base64.hpp>
@@ -200,6 +201,7 @@ void doKeyExchange() {
 
     // Generate client keypair
     mbedtls_ecdh_gen_public(&ctx.grp, &ctx.d, &ctx.Q, mbedtls_ctr_drbg_random, &ctr_drbg);
+    // Serialize client public key
     mbedtls_ecp_point_write_binary(&ctx.grp, &ctx.Q, MBEDTLS_ECP_PF_UNCOMPRESSED, &olen, client_pub, sizeof(client_pub));
 
     Serial.print("Kunci Publik IoT(hex): ");
@@ -402,6 +404,23 @@ void doEncryptAESGCM(char *plaintext, uint8_t *ciphertext,
     mbedtls_gcm_free(&gcm);
 }
 
+// filter ECG signal
+// int buffer[FILTER_SIZE];
+// int index = 0;
+// int applyMovingAverage(int newValue) {
+//   buffer[index] = newValue;
+//   index = (index + 1) % FILTER_SIZE;
+
+//   long sum = 0;
+//   for (int i = 0; i < FILTER_SIZE; i++) {
+//     sum += buffer[i];
+//   }
+//   return sum / FILTER_SIZE;
+// }
+
+// Variabel untuk kalibrasi ADC
+esp_adc_cal_characteristics_t adc_chars;
+
 void setup() {
     // put your setup code here, to run once:
     Serial.begin(115200);
@@ -410,6 +429,21 @@ void setup() {
     pinMode(ECG_PIN, INPUT); // ECG signal
     pinMode(LO_PLUS, INPUT); // Lead-off detection LO+
     pinMode(LO_MINUS, INPUT); // Lead-off detection LO-
+
+    // Konfigurasi ADC ESP32
+    analogSetAttenuation(ADC_11db); // Atur atenuasi ke 11dB (rentang 0-3.3V)
+    analogSetWidth(12);             // Atur resolusi ke 12-bit (0-4095)
+    
+    // Inisialisasi kalibrasi ADC
+    // ADC_UNIT_1 karena GPIO36 adalah bagian dari ADC1
+    esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
+    if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+      Serial.println("ADC calibrated using eFuse Vref.");
+    } else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
+      Serial.println("ADC calibrated using eFuse Two Point.");
+    } else {
+      Serial.println("ADC calibrated using Default Vref.");
+    }
 
     // Initialize wifi & mqtt 
     Serial.println();
@@ -449,9 +483,21 @@ void loop() {
     }
 
     // Baca data dari sensor ECG
-    int ecgValue = analogRead(ECG_PIN);
-    Serial.print("ECG Value: ");
-    Serial.println(ecgValue);
+    int rawECG = analogRead(ECG_PIN);
+    int voltageECG_mV = esp_adc_cal_raw_to_voltage(rawECG, &adc_chars);
+
+    Serial.print("ECG (raw): ");
+    Serial.print(rawECG);
+    Serial.print("\tECG (mV): ");
+    Serial.println(voltageECG_mV);
+
+    // int ecgValue = analogRead(ECG_PIN);
+    // int filteredValue = applyMovingAverage(ecgValue);
+    // Serial.print("ECG Value: ");
+    // Serial.println(ecgValue);
+    // Serial.print("Filtered ECG Value: ");
+    // Serial.println(filteredValue);
+
     // Generate random ECG value between 200 and 900
     // int ecgValue = random(200, 900);
 
@@ -462,10 +508,15 @@ void loop() {
     // Serial.printf("ESP Time (ms): %llu\n", nowMs);
 
     // Konversi integer ke string
-    char ecgValueStr[6]; // Pastikan buffer cukup besar
-    sprintf(ecgValueStr, "%d", ecgValue);
-    Serial.print("Nilai EKG: ");
-    Serial.println(ecgValue);
+    char ecgValueStr[8]; // Cukup untuk 0 - 5000 mV
+    sprintf(ecgValueStr, "%d", voltageECG_mV);
+    // sprintf(ecgValueStr, "%d", filteredValue);
+    // Serial.print("Nilai EKG: ");
+    // Serial.println(ecgValue);
+    // Serial.println(filteredValue);
+
+    Serial.print("Nilai EKG (mV): ");
+    Serial.println(ecgValueStr);
 
     uint8_t iv[16];
     generateSecureRandom(iv, 16);
@@ -581,5 +632,5 @@ void loop() {
     }
 
     // Delay sebelum loop berikutnya
-    delay(4);
+    delay(500);
 }
